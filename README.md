@@ -1,8 +1,15 @@
-# Foundry Template
+# Boundless Transceiver Project
 
-[![Open in Gitpod][gitpod-badge]][gitpod] [![Github Actions][gha-badge]][gha] [![Foundry][foundry-badge]][foundry] [![License: MIT][license-badge]][license]
+## Implementation Plan
 
-A Foundry-based template for developing Solidity smart contracts, with sensible defaults.
+- [x] Set up relevant structs for the checkpoints, validation process, and journal
+- [] Set up admin role with RBAC configuration
+- [] Constructor configuration for (1) initial checkpoint to verify from, (2) allowed time span since last transition, (3) trusted R0 verifier address, (4) ImageID
+- [] Verification function using the R0 verifier, ImageID, journal and seal.
+
+### References
+
+- <https://hackmd.io/QSDlFbuKToScQ43jISuvFA>
 
 ## Overview
 
@@ -12,34 +19,6 @@ This template provides a robust foundation for Solidity smart contract developme
 - [Bun](https://bun.sh/): Modern package management (instead of git submodules)
 - [Forge Std](https://github.com/foundry-rs/forge-std): Testing utilities and helpful contracts
 - [Solhint](https://github.com/protofire/solhint): Solidity linting
-
-## Installation
-
-### Quick Start
-
-Click the [`Use this template`](https://github.com/ignio-labs/foundry-template/generate) button at the top of the page.
-
-Or install manually with `foundry`:
-
-```sh
-$ forge init --template ignio-labs/foundry-template my-project
-$ cd my-project
-$ bun install # install Solhint, OpenZeppelin Contracts and other deps
-```
-
-First time with Foundry? Check out the [installation guide](https://github.com/foundry-rs/foundry#installation).
-
-### Monorepo Setup
-
-For use within a monorepo (e.g., with [Turborepo](https://turbo.build/repo/docs)):
-
-```sh
-$ forge init --template ignio-labs/foundry-template packages/my-project --no-git
-$ cd packages/my-project
-$ bun install
-```
-
-**Note**: Using another package manager? Delete `bun.lock` and use your preferred tool (e.g., `pnpm install`).
 
 ## Development
 
