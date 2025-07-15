@@ -1,0 +1,35 @@
+{
+  "name": "@ignio-labs/foundry-template",
+  "description": "A simple foundry template starter to get going with smart contract development in Solidity",
+  "version": "1.0.0",
+  "author": {
+    "name": "ignio-labs",
+    "url": "https://github.com/ignio-labs"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.3.0"
+  },
+  "devDependencies": {
+    "forge-std": "github:foundry-rs/forge-std#v1.9.7",
+    "solhint": "^3.6.2"
+  },
+  "keywords": [
+    "blockchain",
+    "ethereum",
+    "forge",
+    "foundry",
+    "smart-contracts",
+    "solidity",
+    "template"
+  ],
+  "private": true,
+  "scripts": {
+    "clean": "rm -rf cache out",
+    "build": "forge build",
+    "lint": "bun run lint:sol",
+    "lint:sol": "forge fmt --check && bun solhint \"{script,src,tests}/**/*.sol\"",
+    "test": "forge test",
+    "test:coverage": "forge coverage",
+    "test:coverage:report": "forge coverage --report lcov && genhtml lcov.info --branch-coverage --output-dir coverage"
+  }
+}
