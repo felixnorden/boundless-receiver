@@ -3,9 +3,11 @@ pragma solidity ^0.8.30;
 
 import { ConsensusState } from "./tseth.sol";
 
-struct Journal {
-    ConsensusState preState;
-    ConsensusState postState;
-}
+contract RiscZeroTransceiver {
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
-contract RiscZeroTransceiver { }
+    struct Journal {
+        ConsensusState preState;
+        ConsensusState postState;
+    }
+}

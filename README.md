@@ -10,6 +10,8 @@
 ### References
 
 - <https://hackmd.io/QSDlFbuKToScQ43jISuvFA>
+- Signal ZKVM Guest program: <https://github.com/boundless-xyz/Signal-Ethereum>
+- Proofs: <https://signal-proofs-v1-20250710153907748200000003.s3.us-west-2.amazonaws.com/v1/epoch/378541.json>
 
 ## Overview
 
