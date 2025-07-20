@@ -3,9 +3,12 @@
 ## Implementation Plan
 
 - [x] Set up relevant structs for the checkpoints, validation process, and journal
-- [] Set up admin role with RBAC configuration
-- [] Constructor configuration for (1) initial checkpoint to verify from, (2) allowed time span since last transition, (3) trusted R0 verifier address, (4) ImageID
-- [] Verification function using the R0 verifier, ImageID, journal and seal.
+- [x] Set up admin role with RBAC configuration
+- [x] Constructor configuration for (1) initial checkpoint to verify from, (2) allowed time span since last transition, (3) trusted R0 verifier address, (4) ImageID
+- [x] Verification function using the R0 verifier, ImageID, journal and seal.
+- [x] Testing of admin functions
+- [] Testing of Verification/transition function
+- [] Integration of Wormhole
 
 ### References
 
