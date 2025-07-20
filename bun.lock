@@ -5,6 +5,7 @@
       "name": "@prb/foundry-template",
       "dependencies": {
         "@openzeppelin/contracts": "^5.3.0",
+        "@risc0/ethereum": "github:risc0/risc0-ethereum#v2.2.0",
         "wormhole-sdk": "github:wormhole-foundation/wormhole-solidity-sdk#v0.1.0",
       },
       "devDependencies": {
@@ -21,6 +22,8 @@
     "@babel/highlight": ["@babel/highlight@7.23.4", "", { "dependencies": { "@babel/helper-validator-identifier": "^7.22.20", "chalk": "^2.4.2", "js-tokens": "^4.0.0" } }, "sha512-acGdbYSfp2WheJoJm/EBBBLh/ID8KDc64ISZ9DYtBmC8/Q204PZJLHyzeB5qMzJ5trcOkybd78M4x2KWsUq++A=="],
 
     "@openzeppelin/contracts": ["@openzeppelin/contracts@5.3.0", "", {}, "sha512-zj/KGoW7zxWUE8qOI++rUM18v+VeLTTzKs/DJFkSzHpQFPD/jKKF0TrMxBfGLl3kpdELCNccvB3zmofSzm4nlA=="],
+
+    "@risc0/ethereum": ["risc0-ethereum@github:risc0/risc0-ethereum#382d76a", {}, "risc0-risc0-ethereum-382d76a"],
 
     "@solidity-parser/parser": ["@solidity-parser/parser@0.16.2", "", { "dependencies": { "antlr4ts": "^0.5.0-alpha.4" } }, "sha512-PI9NfoA3P8XK2VBkK5oIfRgKDsicwDZfkVq9ZTBCQYGOP1N2owgY2dyLGyU5/J/hQs8KRk55kdmvTLjy3Mu3vg=="],
 
