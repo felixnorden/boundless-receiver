@@ -31,6 +31,10 @@ contract RiscZeroTransceiverTest is Test {
     address admin;
     address user;
 
+    address wormhole;
+    address beaconEmitter;
+    uint16 emitterChainId;
+
     function setUp() public {
         string memory proofData = vm.readFile("./test/proof.json");
 
@@ -43,7 +47,11 @@ contract RiscZeroTransceiverTest is Test {
         admin = address(0xA11CE);
         user = address(0xB0B);
 
-        rzt = new RiscZeroTransceiver(root, permissibleTimespan, verifier, imageID, admin, admin);
+        wormhole = address(0x1234);
+        beaconEmitter = address(0x5678);
+        emitterChainId = 1;
+
+        rzt = new RiscZeroTransceiver(root, permissibleTimespan, verifier, imageID, wormhole, beaconEmitter, emitterChainId, admin, admin);
     }
 
     function test_UserHasNoAdminRole() public view {
