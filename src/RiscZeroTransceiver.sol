@@ -83,20 +83,7 @@ contract RiscZeroTransceiver is AccessControl {
         bytes32 journalHash = sha256(journalData);
         IRiscZeroVerifier(VERIFIER).verify(seal, imageID, journalHash);
 
-        currentState = journal.postState;
-        Checkpoint memory finalizedCheckpoint = journal.postState.finalizedCheckpoint;
-        CheckpointAttestation storage attestation = attestations[finalizedCheckpoint.root];
-        attestation.rzConfirmed = true;
-        if (attestation.wormholeConfirmed && attestation.rzConfirmed) {
-            _updateLatestCheckpoint(finalizedCheckpoint.epoch, finalizedCheckpoint.root);
-        }
-
-        emit Transitioned(
-            journal.preState.finalizedCheckpoint.root,
-            journal.postState.finalizedCheckpoint.root,
-            journal.preState,
-            journal.postState
-        );
+        _transition(journal);
     }
 
     function receiveWormholeMessage(bytes calldata encodedVM) external {
@@ -118,6 +105,11 @@ contract RiscZeroTransceiver is AccessControl {
         if (attestation.wormholeConfirmed && attestation.rzConfirmed) {
             _updateLatestCheckpoint(epoch, blockRoot);
         }
+    }
+
+    function manualTransition(bytes calldata journalData) external onlyRole(ADMIN_ROLE) {
+        Journal memory journal = abi.decode(journalData, (Journal));
+        _transition(journal);
     }
 
     /// @notice The latest finalized checkpoint provided by a ZKP.
@@ -146,6 +138,23 @@ contract RiscZeroTransceiver is AccessControl {
             latestCheckpoint.root = blockRoot;
             emit Confirmed(epoch, blockRoot);
         }
+    }
+
+    function _transition(Journal memory journal) internal {
+        currentState = journal.postState;
+        Checkpoint memory finalizedCheckpoint = journal.postState.finalizedCheckpoint;
+        CheckpointAttestation storage attestation = attestations[finalizedCheckpoint.root];
+        attestation.rzConfirmed = true;
+        if (attestation.wormholeConfirmed && attestation.rzConfirmed) {
+            _updateLatestCheckpoint(finalizedCheckpoint.epoch, finalizedCheckpoint.root);
+        }
+
+        emit Transitioned(
+            journal.preState.finalizedCheckpoint.root,
+            journal.postState.finalizedCheckpoint.root,
+            journal.preState,
+            journal.postState
+        );
     }
 
     function _compareConsensusState(ConsensusState memory a, ConsensusState memory b) internal pure returns (bool) {
