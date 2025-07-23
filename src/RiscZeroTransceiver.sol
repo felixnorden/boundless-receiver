@@ -92,7 +92,7 @@ contract RiscZeroTransceiver is AccessControl {
             revert UnauthorizedEmitterAddress();
         }
 
-        (uint64 slot, bytes32 blockRoot) = abi.decode(vm.payload, (uint64, bytes32));
+        (uint64 epoch, bytes32 blockRoot) = abi.decode(vm.payload, (uint64, bytes32));
 
         // Now we can use this tuple as an attestation to a finalized block
     }

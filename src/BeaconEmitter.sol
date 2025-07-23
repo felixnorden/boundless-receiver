@@ -14,6 +14,7 @@ import { IWormhole } from "wormhole-sdk/interfaces/IWormhole.sol";
  */
 contract BeaconEmitter {
     uint8 constant CONSISTENCY_LEVEL = 0; // Block containing message must be finalized
+    uint64 constant SLOTS_PER_EPOCH = 32; // Seconds per slot, as per Ethereum's beacon chain
 
     IWormhole public immutable wormhole;
     uint256 public immutable genesisBlockTimestamp;
@@ -26,12 +27,12 @@ contract BeaconEmitter {
         genesisBlockTimestamp = _genesisBlockTimestamp;
     }
 
-    function emitForSlot(uint64 _slot) external payable {
+    function emitForEpoch(uint64 _epoch) external payable {
         uint256 wormholeFee = wormhole.messageFee();
 
-        bytes32 blockRoot = Beacon.findBlockRoot(genesisBlockTimestamp, _slot);
+        bytes32 blockRoot = Beacon.findBlockRoot(genesisBlockTimestamp, _epoch * SLOTS_PER_EPOCH);
 
-        wormhole.publishMessage{value: wormholeFee}(0, abi.encode(_slot, blockRoot), CONSISTENCY_LEVEL);
+        wormhole.publishMessage{value: wormholeFee}(0, abi.encode(_epoch, blockRoot), CONSISTENCY_LEVEL);
     }
 }
 
