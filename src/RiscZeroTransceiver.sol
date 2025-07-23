@@ -2,7 +2,6 @@
 pragma solidity ^0.8.30;
 
 import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
-import { Steel } from "@risc0/contracts/steel/Steel.sol";
 import { IRiscZeroVerifier } from "@risc0/contracts/IRiscZeroVerifier.sol";
 import { ConsensusState, Checkpoint } from "./tseth.sol";
 import { IWormhole } from "wormhole-sdk/interfaces/IWormhole.sol";
@@ -11,24 +10,37 @@ import { toWormholeFormat } from "wormhole-sdk/Utils.sol";
 contract RiscZeroTransceiver is AccessControl {
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
-    bytes32 public imageID;
-    address public immutable verifier;
-    uint24 public permissibleTimespan;
-
-    IWormhole public immutable wormhole;
-    /// @notice The address of the approved BeaconEmitter contract deployment
-    bytes32 public immutable beaconEmitter;
-    /// @notice The chain ID where the approved BeaconEmitter is deployed.
-    uint16 public immutable emitterChainId;
-
-    ConsensusState private currentState;
+    struct CheckpointAttestation {
+        bool wormholeConfirmed;
+        bool rzConfirmed;
+    }
 
     struct Journal {
         ConsensusState preState;
         ConsensusState postState;
     }
 
-    event Transition(bytes32 preRoot, bytes32 indexed postRoot, ConsensusState preState, ConsensusState postState);
+    ConsensusState private currentState;
+
+    Checkpoint private latestCheckpoint;
+
+    bytes32 public imageID;
+
+    IWormhole public immutable WORMHOLE;
+    /// @notice The address of the approved BeaconEmitter contract deployment
+    bytes32 public immutable BEACON_EMITTER;
+
+    address public immutable VERIFIER;
+
+    uint24 public permissibleTimespan;
+
+    /// @notice The chain ID where the approved BeaconEmitter is deployed.
+    uint16 public immutable EMITTER_CHAIN_ID;
+
+    mapping(bytes32 blockRoot => CheckpointAttestation attestation) private attestations;
+
+    event Transitioned(bytes32 preRoot, bytes32 indexed postRoot, ConsensusState preState, ConsensusState postState);
+    event Confirmed(uint64 indexed epoch, bytes32 indexed root);
 
     error InvalidArgument();
     error InvalidPreState();
@@ -39,11 +51,11 @@ contract RiscZeroTransceiver is AccessControl {
     constructor(
         ConsensusState memory startingState,
         uint24 permissibleTimespan_,
-        address verifier_,
+        address verifier,
         bytes32 imageID_,
-        address wormhole_,
-        address beaconEmitter_,
-        uint16 emitterChainId_,
+        address wormhole,
+        address beaconEmitter,
+        uint16 emitterChainId,
         address admin,
         address roleAdmin
     ) {
@@ -52,11 +64,11 @@ contract RiscZeroTransceiver is AccessControl {
 
         currentState = startingState;
         permissibleTimespan = permissibleTimespan_;
-        verifier = verifier_;
         imageID = imageID_;
-        wormhole = IWormhole(wormhole_);
-        beaconEmitter = toWormholeFormat(beaconEmitter_);
-        emitterChainId = emitterChainId_;
+        VERIFIER = verifier;
+        WORMHOLE = IWormhole(wormhole);
+        BEACON_EMITTER = toWormholeFormat(beaconEmitter);
+        EMITTER_CHAIN_ID = emitterChainId;
     }
 
     function transition(bytes calldata journalData, bytes calldata seal) external {
@@ -69,36 +81,53 @@ contract RiscZeroTransceiver is AccessControl {
         }
 
         bytes32 journalHash = sha256(journalData);
-        IRiscZeroVerifier(verifier).verify(seal, imageID, journalHash);
+        IRiscZeroVerifier(VERIFIER).verify(seal, imageID, journalHash);
 
         currentState = journal.postState;
-        emit Transition(
-            journal.preState.currentJustifiedCheckpoint.root,
-            journal.postState.currentJustifiedCheckpoint.root,
+        Checkpoint memory finalizedCheckpoint = journal.postState.finalizedCheckpoint;
+        CheckpointAttestation storage attestation = attestations[finalizedCheckpoint.root];
+        attestation.rzConfirmed = true;
+        if (attestation.wormholeConfirmed && attestation.rzConfirmed) {
+            _updateLatestCheckpoint(finalizedCheckpoint.epoch, finalizedCheckpoint.root);
+        }
+
+        emit Transitioned(
+            journal.preState.finalizedCheckpoint.root,
+            journal.postState.finalizedCheckpoint.root,
             journal.preState,
             journal.postState
         );
     }
 
     function receiveWormholeMessage(bytes calldata encodedVM) external {
-        (IWormhole.VM memory vm, bool valid, string memory reason) = wormhole.parseAndVerifyVM(encodedVM);
+        (IWormhole.VM memory vm, bool valid, string memory reason) = WORMHOLE.parseAndVerifyVM(encodedVM);
         if (!valid) {
             revert(reason);
         }
-        if (vm.emitterChainId != emitterChainId) {
+        if (vm.emitterChainId != EMITTER_CHAIN_ID) {
             revert UnauthorizedEmitterChainId();
         }
-        if (vm.emitterAddress != beaconEmitter) {
+        if (vm.emitterAddress != BEACON_EMITTER) {
             revert UnauthorizedEmitterAddress();
         }
 
         (uint64 epoch, bytes32 blockRoot) = abi.decode(vm.payload, (uint64, bytes32));
 
-        // Now we can use this tuple as an attestation to a finalized block
+        CheckpointAttestation storage attestation = attestations[blockRoot];
+        attestation.wormholeConfirmed = true;
+        if (attestation.wormholeConfirmed && attestation.rzConfirmed) {
+            _updateLatestCheckpoint(epoch, blockRoot);
+        }
     }
 
-    function checkpoint() external view returns (Checkpoint memory current) {
-        current = currentState.currentJustifiedCheckpoint;
+    /// @notice The latest finalized checkpoint provided by a ZKP.
+    function consensusCheckpoint() external view returns (Checkpoint memory) {
+        return currentState.finalizedCheckpoint;
+    }
+
+    /// @notice The latest 2/2 confirmed checkpoint by both a ZKP and Wormhole.
+    function confirmedCheckpoint() external view returns (Checkpoint memory) {
+        return latestCheckpoint;
     }
 
     function updateImageID(bytes32 newImageID) external onlyRole(ADMIN_ROLE) {
@@ -109,6 +138,14 @@ contract RiscZeroTransceiver is AccessControl {
     function updatePermissibleTimespan(uint24 newPermissibleTimespan) external onlyRole(ADMIN_ROLE) {
         if (newPermissibleTimespan == permissibleTimespan) revert InvalidArgument();
         permissibleTimespan = newPermissibleTimespan;
+    }
+
+    function _updateLatestCheckpoint(uint64 epoch, bytes32 blockRoot) internal {
+        if (epoch > latestCheckpoint.epoch) {
+            latestCheckpoint.epoch = epoch;
+            latestCheckpoint.root = blockRoot;
+            emit Confirmed(epoch, blockRoot);
+        }
     }
 
     function _compareConsensusState(ConsensusState memory a, ConsensusState memory b) internal pure returns (bool) {

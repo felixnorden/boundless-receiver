@@ -51,7 +51,9 @@ contract RiscZeroTransceiverTest is Test {
         beaconEmitter = address(0x5678);
         emitterChainId = 1;
 
-        rzt = new RiscZeroTransceiver(root, permissibleTimespan, verifier, imageID, wormhole, beaconEmitter, emitterChainId, admin, admin);
+        rzt = new RiscZeroTransceiver(
+            root, permissibleTimespan, verifier, imageID, wormhole, beaconEmitter, emitterChainId, admin, admin
+        );
     }
 
     function test_UserHasNoAdminRole() public view {

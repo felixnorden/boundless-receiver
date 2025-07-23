@@ -7,8 +7,10 @@ import { IWormhole } from "wormhole-sdk/interfaces/IWormhole.sol";
  * @title BeaconEmitter
  * @notice Read beacon block roots via EIP-4788 and emit them as multicast Wormhole messages.
  *
- * @dev Note this must be deployed on a chain that uses beacon chain consensus and supports EIP-4788, such as Ethereum or Gnosis
- * @dev The block root for a given slot can only be retrieved while it is in the beacon roots history buffer, which is 8191 slots (about 27 hours) on Ethereum.
+ * @dev Note this must be deployed on a chain that uses beacon chain consensus and supports EIP-4788, such as Ethereum
+ * or Gnosis
+ * @dev The block root for a given slot can only be retrieved while it is in the beacon roots history buffer, which is
+ * 8191 slots (about 27 hours) on Ethereum.
  * @dev A receiver must check that messages are from the correct chain/contract before processing them
  *
  */
@@ -21,7 +23,8 @@ contract BeaconEmitter {
 
     /// @notice Creates a new BeaconEmitter contract.
     /// @param _wormhole The address of the Wormhole core contract.
-    /// @param _genesisBlockTimestamp The timestamp of the genesis beacon block of the chain this contract is deployed on. 1606824000 for Ethereum mainnet.
+    /// @param _genesisBlockTimestamp The timestamp of the genesis beacon block of the chain this contract is deployed
+    /// on. 1606824000 for Ethereum mainnet.
     constructor(IWormhole _wormhole, uint256 _genesisBlockTimestamp) {
         wormhole = _wormhole;
         genesisBlockTimestamp = _genesisBlockTimestamp;
@@ -32,10 +35,9 @@ contract BeaconEmitter {
 
         bytes32 blockRoot = Beacon.findBlockRoot(genesisBlockTimestamp, _epoch * SLOTS_PER_EPOCH);
 
-        wormhole.publishMessage{value: wormholeFee}(0, abi.encode(_epoch, blockRoot), CONSISTENCY_LEVEL);
+        wormhole.publishMessage{ value: wormholeFee }(0, abi.encode(_epoch, blockRoot), CONSISTENCY_LEVEL);
     }
 }
-
 
 /// @title Beacon Library
 library Beacon {
@@ -67,8 +69,7 @@ library Beacon {
         }
 
         while (currBlockTimestamp <= block.timestamp) {
-            (bool success, bytes memory result) =
-                BEACON_ROOTS_ADDRESS.staticcall(abi.encode(currBlockTimestamp));
+            (bool success, bytes memory result) = BEACON_ROOTS_ADDRESS.staticcall(abi.encode(currBlockTimestamp));
             if (success && result.length > 0) {
                 return abi.decode(result, (bytes32));
             }
