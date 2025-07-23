@@ -91,4 +91,107 @@ contract RiscZeroTransceiverTest is Test {
             vm.assertEq(rzt.imageID(), newImageID);
         }
     }
+
+    function test_ManualTransitionByAdmin() public {
+        RiscZeroTransceiver.Journal memory journal = RiscZeroTransceiver.Journal({
+            preState: root,
+            postState: ConsensusState({
+                currentJustifiedCheckpoint: Checkpoint({ epoch: 1, root: bytes32(uint256(1)) }),
+                finalizedCheckpoint: Checkpoint({ epoch: 1, root: bytes32(uint256(1)) })
+            })
+        });
+
+        bytes memory journalData = abi.encode(journal);
+
+        vm.expectEmit(true, true, true, true);
+        emit Transitioned(
+            journal.preState.finalizedCheckpoint.root,
+            journal.postState.finalizedCheckpoint.root,
+            journal.preState,
+            journal.postState
+        );
+
+        vm.prank(admin);
+        rzt.manualTransition(journalData);
+
+        assertEq(rzt.consensusCheckpoint().epoch, journal.postState.finalizedCheckpoint.epoch);
+        assertEq(rzt.consensusCheckpoint().root, journal.postState.finalizedCheckpoint.root);
+    }
+
+    function test_ManualTransitionByNonAdminReverts() public {
+        RiscZeroTransceiver.Journal memory journal = RiscZeroTransceiver.Journal({
+            preState: root,
+            postState: ConsensusState({
+                currentJustifiedCheckpoint: Checkpoint({ epoch: 1, root: bytes32(uint256(1)) }),
+                finalizedCheckpoint: Checkpoint({ epoch: 1, root: bytes32(uint256(1)) })
+            })
+        });
+
+        bytes memory journalData = abi.encode(journal);
+
+        vm.prank(user);
+        vm.expectRevert();
+        rzt.manualTransition(journalData);
+    }
+
+    function test_ManualTransitionIgnoresPreState() public {
+        RiscZeroTransceiver.Journal memory journal = RiscZeroTransceiver.Journal({
+            preState: ConsensusState({
+                currentJustifiedCheckpoint: Checkpoint({ epoch: 1, root: bytes32(uint256(1)) }),
+                finalizedCheckpoint: Checkpoint({ epoch: 1, root: bytes32(uint256(1)) })
+            }),
+            postState: ConsensusState({
+                currentJustifiedCheckpoint: Checkpoint({ epoch: 2, root: bytes32(uint256(2)) }),
+                finalizedCheckpoint: Checkpoint({ epoch: 2, root: bytes32(uint256(2)) })
+            })
+        });
+
+        bytes memory journalData = abi.encode(journal);
+
+        vm.expectEmit(true, true, true, true);
+        emit Transitioned(
+            journal.preState.finalizedCheckpoint.root,
+            journal.postState.finalizedCheckpoint.root,
+            journal.preState,
+            journal.postState
+        );
+
+        vm.prank(admin);
+        rzt.manualTransition(journalData);
+        assertEq(rzt.consensusCheckpoint().epoch, journal.postState.finalizedCheckpoint.epoch);
+        assertEq(rzt.consensusCheckpoint().root, journal.postState.finalizedCheckpoint.root);
+    }
+
+    function test_ManualTransitionPermissibleTimespanLapsedSucceeds() public {
+        RiscZeroTransceiver.Journal memory journal = RiscZeroTransceiver.Journal({
+            preState: root,
+            postState: ConsensusState({
+                currentJustifiedCheckpoint: Checkpoint({
+                    epoch: root.currentJustifiedCheckpoint.epoch + permissibleTimespan + 1,
+                    root: bytes32(uint256(1))
+                }),
+                finalizedCheckpoint: Checkpoint({
+                    epoch: root.finalizedCheckpoint.epoch + permissibleTimespan + 1,
+                    root: bytes32(uint256(1))
+                })
+            })
+        });
+
+        bytes memory journalData = abi.encode(journal);
+
+        vm.expectEmit(true, true, true, true);
+        emit Transitioned(
+            journal.preState.finalizedCheckpoint.root,
+            journal.postState.finalizedCheckpoint.root,
+            journal.preState,
+            journal.postState
+        );
+
+        vm.prank(admin);
+        rzt.manualTransition(journalData);
+        assertEq(rzt.consensusCheckpoint().epoch, journal.postState.finalizedCheckpoint.epoch);
+        assertEq(rzt.consensusCheckpoint().root, journal.postState.finalizedCheckpoint.root);
+    }
+
+    event Transitioned(bytes32 preRoot, bytes32 indexed postRoot, ConsensusState preState, ConsensusState postState);
 }
