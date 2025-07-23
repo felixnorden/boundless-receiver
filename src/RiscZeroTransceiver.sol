@@ -5,6 +5,8 @@ import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol"
 import { Steel } from "@risc0/contracts/steel/Steel.sol";
 import { IRiscZeroVerifier } from "@risc0/contracts/IRiscZeroVerifier.sol";
 import { ConsensusState, Checkpoint } from "./tseth.sol";
+import { IWormhole } from "wormhole-sdk/interfaces/IWormhole.sol";
+import { toWormholeFormat } from "wormhole-sdk/Utils.sol";
 
 contract RiscZeroTransceiver is AccessControl {
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -12,6 +14,12 @@ contract RiscZeroTransceiver is AccessControl {
     bytes32 public imageID;
     address public immutable verifier;
     uint24 public permissibleTimespan;
+
+    IWormhole public immutable wormhole;
+    /// @notice The address of the approved BeaconEmitter contract deployment
+    bytes32 public immutable beaconEmitter;
+    /// @notice The chain ID where the approved BeaconEmitter is deployed.
+    uint16 public immutable emitterChainId;
 
     ConsensusState private currentState;
 
@@ -25,12 +33,17 @@ contract RiscZeroTransceiver is AccessControl {
     error InvalidArgument();
     error InvalidPreState();
     error PermissibleTimespanLapsed();
+    error UnauthorizedEmitterChainId();
+    error UnauthorizedEmitterAddress();
 
     constructor(
         ConsensusState memory startingState,
         uint24 permissibleTimespan_,
         address verifier_,
         bytes32 imageID_,
+        address wormhole_,
+        address beaconEmitter_,
+        uint16 emitterChainId_,
         address admin,
         address roleAdmin
     ) {
@@ -41,6 +54,9 @@ contract RiscZeroTransceiver is AccessControl {
         permissibleTimespan = permissibleTimespan_;
         verifier = verifier_;
         imageID = imageID_;
+        wormhole = IWormhole(wormhole_);
+        beaconEmitter = toWormholeFormat(beaconEmitter_);
+        emitterChainId = emitterChainId_;
     }
 
     function transition(bytes calldata journalData, bytes calldata seal) external {
@@ -62,6 +78,23 @@ contract RiscZeroTransceiver is AccessControl {
             journal.preState,
             journal.postState
         );
+    }
+
+    function receiveWormholeMessage(bytes calldata encodedVM) external {
+        (IWormhole.VM memory vm, bool valid, string memory reason) = wormhole.parseAndVerifyVM(encodedVM);
+        if (!valid) {
+            revert(reason);
+        }
+        if (vm.emitterChainId != emitterChainId) {
+            revert UnauthorizedEmitterChainId();
+        }
+        if (vm.emitterAddress != beaconEmitter) {
+            revert UnauthorizedEmitterAddress();
+        }
+
+        (uint64 epoch, bytes32 blockRoot) = abi.decode(vm.payload, (uint64, bytes32));
+
+        // Now we can use this tuple as an attestation to a finalized block
     }
 
     function checkpoint() external view returns (Checkpoint memory current) {
