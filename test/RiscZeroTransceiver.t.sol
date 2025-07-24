@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.30;
 
-import { IRiscZeroVerifier } from "@risc0/contracts/IRiscZeroVerifier.sol";
+import { IRiscZeroVerifier, Receipt as RiscZeroReceipt } from "@risc0/contracts/IRiscZeroVerifier.sol";
+import { RiscZeroMockVerifier } from "@risc0/contracts/test/RiscZeroMockVerifier.sol";
 import { ConsensusState, Checkpoint } from "../src/tseth.sol";
 import { RiscZeroTransceiver } from "../src/RiscZeroTransceiver.sol";
 
@@ -23,14 +24,15 @@ struct Proof {
 }
 
 contract RiscZeroTransceiverTest is Test {
+    bytes4 constant MOCK_SELECTOR = bytes4(0);
     RiscZeroTransceiver rzt;
+    RiscZeroMockVerifier verifier;
     ConsensusState root;
     bytes32 imageID;
-    address verifier;
     uint24 permissibleTimespan;
     address admin;
     address user;
-
+    RiscZeroTransceiver.Journal journal;
     address wormhole;
     address beaconEmitter;
     uint16 emitterChainId;
@@ -38,12 +40,10 @@ contract RiscZeroTransceiverTest is Test {
     function setUp() public {
         string memory proofData = vm.readFile("./test/proof.json");
 
-        RiscZeroTransceiver.Journal memory journal =
-            abi.decode(vm.parseJsonBytes(proofData, ".journal"), (RiscZeroTransceiver.Journal));
-        root = journal.postState;
+        journal = abi.decode(vm.parseJsonBytes(proofData, ".journal"), (RiscZeroTransceiver.Journal));
+        root = journal.preState;
         imageID = vm.parseJsonBytes32(proofData, ".image_id");
         permissibleTimespan = 3600 * 24 * 3; // 72 hr timespan
-        verifier = address(0x1337);
         admin = address(0xA11CE);
         user = address(0xB0B);
 
@@ -51,8 +51,9 @@ contract RiscZeroTransceiverTest is Test {
         beaconEmitter = address(0x5678);
         emitterChainId = 1;
 
+        verifier = new RiscZeroMockVerifier(MOCK_SELECTOR);
         rzt = new RiscZeroTransceiver(
-            root, permissibleTimespan, verifier, imageID, wormhole, beaconEmitter, emitterChainId, admin, admin
+            root, permissibleTimespan, address(verifier), imageID, wormhole, beaconEmitter, emitterChainId, admin, admin
         );
     }
 
@@ -104,7 +105,7 @@ contract RiscZeroTransceiverTest is Test {
         bytes memory journalData = abi.encode(journal);
 
         vm.expectEmit(true, true, true, true);
-        emit Transitioned(
+        emit RiscZeroTransceiver.Transitioned(
             journal.preState.finalizedCheckpoint.root,
             journal.postState.finalizedCheckpoint.root,
             journal.preState,
@@ -149,7 +150,7 @@ contract RiscZeroTransceiverTest is Test {
         bytes memory journalData = abi.encode(journal);
 
         vm.expectEmit(true, true, true, true);
-        emit Transitioned(
+        emit RiscZeroTransceiver.Transitioned(
             journal.preState.finalizedCheckpoint.root,
             journal.postState.finalizedCheckpoint.root,
             journal.preState,
@@ -180,7 +181,7 @@ contract RiscZeroTransceiverTest is Test {
         bytes memory journalData = abi.encode(journal);
 
         vm.expectEmit(true, true, true, true);
-        emit Transitioned(
+        emit RiscZeroTransceiver.Transitioned(
             journal.preState.finalizedCheckpoint.root,
             journal.postState.finalizedCheckpoint.root,
             journal.preState,
@@ -193,5 +194,51 @@ contract RiscZeroTransceiverTest is Test {
         assertEq(rzt.consensusCheckpoint().root, journal.postState.finalizedCheckpoint.root);
     }
 
-    event Transitioned(bytes32 preRoot, bytes32 indexed postRoot, ConsensusState preState, ConsensusState postState);
+    function test_TransitionSucceeds() public {
+        RiscZeroReceipt memory receipt = verifier.mockProve(imageID, sha256(abi.encode(journal)));
+
+        vm.startPrank(admin);
+        rzt.transition(abi.encode(journal), receipt.seal);
+        vm.stopPrank();
+
+        assertEq(rzt.consensusCheckpoint().root, journal.postState.finalizedCheckpoint.root);
+    }
+
+    function test_TransitionFailsOnWrongPreState() public {
+        RiscZeroTransceiver.Journal memory journal_ = RiscZeroTransceiver.Journal({
+            preState: ConsensusState({
+                currentJustifiedCheckpoint: Checkpoint({ epoch: 1, root: bytes32(uint256(1)) }),
+                finalizedCheckpoint: Checkpoint({ epoch: 1, root: bytes32(uint256(1)) })
+            }),
+            postState: journal.postState
+        });
+        RiscZeroReceipt memory receipt = verifier.mockProve(imageID, sha256(abi.encode(journal_)));
+
+        vm.expectRevert(RiscZeroTransceiver.InvalidPreState.selector);
+        vm.startPrank(admin);
+        rzt.transition(abi.encode(journal_), receipt.seal);
+        vm.stopPrank();
+    }
+
+    function test_TransitionFailsOnImpermissibleSpan() public {
+        RiscZeroTransceiver.Journal memory journal_ = RiscZeroTransceiver.Journal({
+            preState: root,
+            postState: ConsensusState({
+                currentJustifiedCheckpoint: Checkpoint({
+                    epoch: root.currentJustifiedCheckpoint.epoch + permissibleTimespan + 1,
+                    root: bytes32(uint256(1))
+                }),
+                finalizedCheckpoint: Checkpoint({
+                    epoch: root.finalizedCheckpoint.epoch + permissibleTimespan + 1,
+                    root: bytes32(uint256(1))
+                })
+            })
+        });
+        RiscZeroReceipt memory receipt = verifier.mockProve(imageID, sha256(abi.encode(journal_)));
+
+        vm.expectRevert(RiscZeroTransceiver.PermissibleTimespanLapsed.selector);
+        vm.startPrank(admin);
+        rzt.transition(abi.encode(journal_), receipt.seal);
+        vm.stopPrank();
+    }
 }
