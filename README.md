@@ -7,8 +7,10 @@
 - [x] Constructor configuration for (1) initial checkpoint to verify from, (2) allowed time span since last transition, (3) trusted R0 verifier address, (4) ImageID
 - [x] Verification function using the R0 verifier, ImageID, journal and seal.
 - [x] Testing of admin functions
-- [] Testing of Verification/transition function
-- [] Integration of Wormhole
+- [x] Testing of Verification/transition function
+- [x] Integration of Wormhole
+- [ ] Testing of Wormhole VAA
+- [ ] Testing of Confirmation logic between Wormhole and RZ
 
 ### References
 
