@@ -1,5 +1,5 @@
 {
-	"name": "@boundless/transceiver",
+	"name": "@boundless/receiver",
 	"description": "A simple foundry template starter to get going with smart contract development in Solidity",
 	"version": "1.0.0",
 	"author": {

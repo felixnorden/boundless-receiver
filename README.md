@@ -9,8 +9,8 @@
 - [x] Testing of admin functions
 - [x] Testing of Verification/transition function
 - [x] Integration of Wormhole
-- [ ] Testing of Wormhole VAA
-- [ ] Testing of Confirmation logic between Wormhole and RZ
+- [x] Testing of Wormhole VAA
+- [x] Testing of Confirmation logic between Wormhole and RZ
 
 ### References
 

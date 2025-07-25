@@ -7,12 +7,16 @@ import { ConsensusState, Checkpoint } from "./tseth.sol";
 import { IWormhole } from "wormhole-sdk/interfaces/IWormhole.sol";
 import { toWormholeFormat } from "wormhole-sdk/Utils.sol";
 
-contract RiscZeroTransceiver is AccessControl {
+contract BoundlessReceiver is AccessControl {
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 constant UNDEFINED_ROOT = bytes32(0);
+
+    uint16 public constant BOUNDLESS_FLAG = 0;
+    uint16 public constant WORMHOLE_FLAG = 1;
+    uint16 public constant TWO_OF_TWO_FLAG = BOUNDLESS_FLAG | WORMHOLE_FLAG;
 
     struct CheckpointAttestation {
-        bool wormholeConfirmed;
-        bool rzConfirmed;
+        uint16 confirmations;
     }
 
     struct Journal {
@@ -22,11 +26,10 @@ contract RiscZeroTransceiver is AccessControl {
 
     ConsensusState private currentState;
 
-    Checkpoint private latestCheckpoint;
-
     bytes32 public imageID;
 
     IWormhole public immutable WORMHOLE;
+
     /// @notice The address of the approved BeaconEmitter contract deployment
     bytes32 public immutable BEACON_EMITTER;
 
@@ -37,10 +40,13 @@ contract RiscZeroTransceiver is AccessControl {
     /// @notice The chain ID where the approved BeaconEmitter is deployed.
     uint16 public immutable EMITTER_CHAIN_ID;
 
-    mapping(bytes32 blockRoot => CheckpointAttestation attestation) private attestations;
+    mapping(uint64 epoch => bytes32 blockRoot) private roots;
+    mapping(bytes32 checkpointHash => CheckpointAttestation attestation) private attestations;
 
-    event Transitioned(bytes32 preRoot, bytes32 indexed postRoot, ConsensusState preState, ConsensusState postState);
-    event Confirmed(uint64 indexed epoch, bytes32 indexed root);
+    event Transitioned(
+        uint64 indexed preEpoch, uint64 indexed postEpoch, ConsensusState preState, ConsensusState postState
+    );
+    event Confirmed(uint64 indexed epoch, bytes32 indexed root, uint16 indexed confirmationLevel);
 
     error InvalidArgument();
     error InvalidPreState();
@@ -98,13 +104,9 @@ contract RiscZeroTransceiver is AccessControl {
             revert UnauthorizedEmitterAddress();
         }
 
-        (uint64 epoch, bytes32 blockRoot) = abi.decode(vm.payload, (uint64, bytes32));
+        (uint64 epoch, bytes32 root) = abi.decode(vm.payload, (uint64, bytes32));
 
-        CheckpointAttestation storage attestation = attestations[blockRoot];
-        attestation.wormholeConfirmed = true;
-        if (attestation.wormholeConfirmed && attestation.rzConfirmed) {
-            _updateLatestCheckpoint(epoch, blockRoot);
-        }
+        _confirm(epoch, root, WORMHOLE_FLAG);
     }
 
     function manualTransition(bytes calldata journalData) external onlyRole(ADMIN_ROLE) {
@@ -112,14 +114,22 @@ contract RiscZeroTransceiver is AccessControl {
         _transition(journal);
     }
 
-    /// @notice The latest finalized checkpoint provided by a ZKP.
-    function consensusCheckpoint() external view returns (Checkpoint memory) {
-        return currentState.finalizedCheckpoint;
-    }
-
-    /// @notice The latest 2/2 confirmed checkpoint by both a ZKP and Wormhole.
-    function confirmedCheckpoint() external view returns (Checkpoint memory) {
-        return latestCheckpoint;
+    /**
+     * @notice the root associated with the provided `epoch`. If the confirmation level isn't met or the root is not
+     * set, `valid` will be false
+     *
+     * TODO: Add in link ref to confirmation levels
+     *
+     * @param epoch the epoch to look up
+     * @param confirmationLevel the level of confirmations required for `valid` to be `true`
+     */
+    function blockRoot(uint64 epoch, uint16 confirmationLevel) external view returns (bytes32 root, bool valid) {
+        root = roots[epoch];
+        if (root == UNDEFINED_ROOT) {
+            valid = false;
+        }
+        CheckpointAttestation storage attestation = attestations[_checkpointHash(epoch, root)];
+        valid = _sufficientConfirmations(attestation.confirmations, confirmationLevel);
     }
 
     function updateImageID(bytes32 newImageID) external onlyRole(ADMIN_ROLE) {
@@ -128,33 +138,23 @@ contract RiscZeroTransceiver is AccessControl {
     }
 
     function updatePermissibleTimespan(uint24 newPermissibleTimespan) external onlyRole(ADMIN_ROLE) {
-        if (newPermissibleTimespan == permissibleTimespan) revert InvalidArgument();
-        permissibleTimespan = newPermissibleTimespan;
-    }
-
-    function _updateLatestCheckpoint(uint64 epoch, bytes32 blockRoot) internal {
-        if (epoch > latestCheckpoint.epoch) {
-            latestCheckpoint.epoch = epoch;
-            latestCheckpoint.root = blockRoot;
-            emit Confirmed(epoch, blockRoot);
+        if (newPermissibleTimespan == permissibleTimespan) {
+            revert InvalidArgument();
         }
+        permissibleTimespan = newPermissibleTimespan;
     }
 
     function _transition(Journal memory journal) internal {
         currentState = journal.postState;
-        Checkpoint memory finalizedCheckpoint = journal.postState.finalizedCheckpoint;
-        CheckpointAttestation storage attestation = attestations[finalizedCheckpoint.root];
-        attestation.rzConfirmed = true;
-        if (attestation.wormholeConfirmed && attestation.rzConfirmed) {
-            _updateLatestCheckpoint(finalizedCheckpoint.epoch, finalizedCheckpoint.root);
-        }
-
         emit Transitioned(
-            journal.preState.finalizedCheckpoint.root,
-            journal.postState.finalizedCheckpoint.root,
+            journal.preState.finalizedCheckpoint.epoch,
+            journal.postState.finalizedCheckpoint.epoch,
             journal.preState,
             journal.postState
         );
+
+        Checkpoint memory finalizedCheckpoint = journal.postState.finalizedCheckpoint;
+        _confirm(finalizedCheckpoint.epoch, finalizedCheckpoint.root, BOUNDLESS_FLAG);
     }
 
     function _compareConsensusState(ConsensusState memory a, ConsensusState memory b) internal pure returns (bool) {
@@ -176,5 +176,32 @@ contract RiscZeroTransceiver is AccessControl {
     {
         uint256 transitionTimespan = post.currentJustifiedCheckpoint.epoch - pre.currentJustifiedCheckpoint.epoch;
         return transitionTimespan <= uint256(permissibleTimespan);
+    }
+
+    function _checkpointHash(Checkpoint memory checkpoint) internal pure returns (bytes32 hash) {
+        hash = _checkpointHash(checkpoint.epoch, checkpoint.root);
+    }
+
+    function _checkpointHash(uint64 epoch, bytes32 root) internal pure returns (bytes32 hash) {
+        hash = keccak256(abi.encodePacked(epoch, root));
+    }
+
+    function _confirm(uint64 epoch, bytes32 root, uint16 flag) internal {
+        CheckpointAttestation storage attestation = attestations[_checkpointHash(epoch, root)];
+        attestation.confirmations = _confirm(attestation.confirmations, flag);
+        // TODO: Verify if blockroot collision is possible
+        if (roots[epoch] == UNDEFINED_ROOT) {
+            roots[epoch] = root;
+        }
+        emit Confirmed(epoch, root, attestation.confirmations);
+    }
+
+    function _confirm(uint16 confirmations, uint16 flag) internal pure returns (uint16) {
+        return uint16(confirmations | (1 << flag));
+    }
+
+    function _sufficientConfirmations(uint16 confirmations, uint16 targetLevel) internal pure returns (bool) {
+        uint16 remainder = confirmations & targetLevel;
+        return remainder >= targetLevel;
     }
 }
