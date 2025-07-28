@@ -11,6 +11,9 @@
 - [x] Integration of Wormhole
 - [x] Testing of Wormhole VAA
 - [x] Testing of Confirmation logic between Wormhole and RZ
+- [ ] Testing BeaconEmitter
+- [ ] Testing End-to-end from BeaconEmitter to Prover
+- [ ] Interface and documentation
 
 ### References
 
