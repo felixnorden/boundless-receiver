@@ -11,6 +11,7 @@ import { Test } from "forge-std/Test.sol";
 import { console2 } from "forge-std/console2.sol";
 
 contract RiscZeroTransceiverTest is Test {
+    uint64 constant SLOTS_PER_EPOCH  = 32;
     bytes4 constant MOCK_SELECTOR = bytes4(0);
     BoundlessReceiver br;
     RiscZeroMockVerifier verifier;
@@ -94,7 +95,8 @@ contract RiscZeroTransceiverTest is Test {
             postState: ConsensusState({
                 currentJustifiedCheckpoint: Checkpoint({ epoch: 1, root: bytes32(uint256(1)) }),
                 finalizedCheckpoint: Checkpoint({ epoch: 1, root: bytes32(uint256(1)) })
-            })
+            }),
+            finalizedSlot: SLOTS_PER_EPOCH
         });
 
         bytes memory journalData = abi.encode(journal);
@@ -126,7 +128,8 @@ contract RiscZeroTransceiverTest is Test {
             postState: ConsensusState({
                 currentJustifiedCheckpoint: Checkpoint({ epoch: 1, root: bytes32(uint256(1)) }),
                 finalizedCheckpoint: Checkpoint({ epoch: 1, root: bytes32(uint256(1)) })
-            })
+            }),
+            finalizedSlot: SLOTS_PER_EPOCH
         });
 
         bytes memory journalData = abi.encode(journal);
@@ -145,7 +148,8 @@ contract RiscZeroTransceiverTest is Test {
             postState: ConsensusState({
                 currentJustifiedCheckpoint: Checkpoint({ epoch: 2, root: bytes32(uint256(2)) }),
                 finalizedCheckpoint: Checkpoint({ epoch: 2, root: bytes32(uint256(2)) })
-            })
+            }),
+            finalizedSlot: 2 * SLOTS_PER_EPOCH
         });
 
         bytes memory journalData = abi.encode(journal);
@@ -177,7 +181,8 @@ contract RiscZeroTransceiverTest is Test {
                     epoch: root.finalizedCheckpoint.epoch + permissibleTimespan + 1,
                     root: bytes32(uint256(1))
                 })
-            })
+            }),
+            finalizedSlot: (root.finalizedCheckpoint.epoch + permissibleTimespan + 1) * SLOTS_PER_EPOCH
         });
 
         bytes memory journalData = abi.encode(journal);
@@ -215,7 +220,8 @@ contract RiscZeroTransceiverTest is Test {
                 currentJustifiedCheckpoint: Checkpoint({ epoch: 1, root: bytes32(uint256(1)) }),
                 finalizedCheckpoint: Checkpoint({ epoch: 1, root: bytes32(uint256(1)) })
             }),
-            postState: journal.postState
+            postState: journal.postState,
+            finalizedSlot: SLOTS_PER_EPOCH
         });
         RiscZeroReceipt memory receipt = verifier.mockProve(imageID, sha256(abi.encode(journal_)));
 
@@ -237,7 +243,9 @@ contract RiscZeroTransceiverTest is Test {
                     epoch: root.finalizedCheckpoint.epoch + permissibleTimespan + 1,
                     root: bytes32(uint256(1))
                 })
-            })
+            }),
+            finalizedSlot: SLOTS_PER_EPOCH
+
         });
         RiscZeroReceipt memory receipt = verifier.mockProve(imageID, sha256(abi.encode(journal_)));
 
@@ -321,7 +329,8 @@ contract RiscZeroTransceiverTest is Test {
             postState: ConsensusState({
                 currentJustifiedCheckpoint: Checkpoint({ epoch: epoch, root: root_ }),
                 finalizedCheckpoint: Checkpoint({ epoch: epoch, root: root_ })
-            })
+            }),
+            finalizedSlot: epoch * SLOTS_PER_EPOCH
         });
 
         RiscZeroReceipt memory receipt = verifier.mockProve(imageID, sha256(abi.encode(journal)));
@@ -356,7 +365,8 @@ contract RiscZeroTransceiverTest is Test {
             postState: ConsensusState({
                 currentJustifiedCheckpoint: Checkpoint({ epoch: epoch, root: root_ }),
                 finalizedCheckpoint: Checkpoint({ epoch: epoch, root: root_ })
-            })
+            }),
+            finalizedSlot: epoch * SLOTS_PER_EPOCH
         });
 
         RiscZeroReceipt memory receipt = verifier.mockProve(imageID, sha256(abi.encode(journal)));
@@ -417,7 +427,8 @@ contract RiscZeroTransceiverTest is Test {
             postState: ConsensusState({
                 currentJustifiedCheckpoint: Checkpoint({ epoch: boundlessEpoch, root: sameRoot }),
                 finalizedCheckpoint: Checkpoint({ epoch: boundlessEpoch, root: sameRoot })
-            })
+            }),
+            finalizedSlot: boundlessEpoch * SLOTS_PER_EPOCH
         });
 
         RiscZeroReceipt memory receipt = verifier.mockProve(imageID, sha256(abi.encode(journal)));
