@@ -129,7 +129,7 @@ contract BoundlessReceiver is AccessControl {
         if (root == UNDEFINED_ROOT) {
             valid = false;
         }
-        CheckpointAttestation storage attestation = attestations[_locatedBlockHash(slot, root)];
+        CheckpointAttestation storage attestation = attestations[_checkpointHash(slot, root)];
         valid = _sufficientConfirmations(attestation.confirmations, confirmationLevel);
     }
 
@@ -180,12 +180,12 @@ contract BoundlessReceiver is AccessControl {
     }
 
     // @notice Generates a unique hash for block that was included in the chain at the given slot
-    function _locatedBlockHash(uint64 slot, bytes32 root) internal pure returns (bytes32 hash) {
+    function _checkpointHash(uint64 slot, bytes32 root) internal pure returns (bytes32 hash) {
         hash = keccak256(abi.encodePacked(slot, root));
     }
 
     function _confirm(uint64 slot, bytes32 root, uint16 flag) internal {
-        CheckpointAttestation storage attestation = attestations[_locatedBlockHash(slot, root)];
+        CheckpointAttestation storage attestation = attestations[_checkpointHash(slot, root)];
         attestation.confirmations = _confirm(attestation.confirmations, flag);
         // TODO: Verify if blockroot collision is possible
         if (roots[slot] == UNDEFINED_ROOT) {

@@ -11,7 +11,7 @@ import { Test } from "forge-std/Test.sol";
 import { console2 } from "forge-std/console2.sol";
 
 contract RiscZeroTransceiverTest is Test {
-    uint64 constant SLOTS_PER_EPOCH  = 32;
+    uint64 constant SLOTS_PER_EPOCH = 32;
     bytes4 constant MOCK_SELECTOR = bytes4(0);
     BoundlessReceiver br;
     RiscZeroMockVerifier verifier;
@@ -245,7 +245,6 @@ contract RiscZeroTransceiverTest is Test {
                 })
             }),
             finalizedSlot: SLOTS_PER_EPOCH
-
         });
         RiscZeroReceipt memory receipt = verifier.mockProve(imageID, sha256(abi.encode(journal_)));
 
@@ -356,17 +355,17 @@ contract RiscZeroTransceiverTest is Test {
     }
 
     function test_Integration_BoundlessThenWormhole_SameEpochRoot() public {
-        uint64 epoch = root.finalizedCheckpoint.epoch + 1;
+        uint64 slot = journal.finalizedSlot;
         bytes32 root_ = bytes32(uint256(2));
 
         // Step 1: Boundless transition first
         BoundlessReceiver.Journal memory journal = BoundlessReceiver.Journal({
             preState: root,
             postState: ConsensusState({
-                currentJustifiedCheckpoint: Checkpoint({ epoch: epoch, root: root_ }),
-                finalizedCheckpoint: Checkpoint({ epoch: epoch, root: root_ })
+                currentJustifiedCheckpoint: Checkpoint({ epoch: slot, root: root_ }),
+                finalizedCheckpoint: Checkpoint({ epoch: slot, root: root_ })
             }),
-            finalizedSlot: epoch * SLOTS_PER_EPOCH
+            finalizedSlot: slot * SLOTS_PER_EPOCH
         });
 
         RiscZeroReceipt memory receipt = verifier.mockProve(imageID, sha256(abi.encode(journal)));
@@ -380,32 +379,32 @@ contract RiscZeroTransceiverTest is Test {
         );
 
         vm.expectEmit(true, true, true, true);
-        emit BoundlessReceiver.Confirmed(epoch, root_, 1); // BOUNDLESS_FLAG = 0x1
+        emit BoundlessReceiver.Confirmed(journal.finalizedSlot, root_, 1); // BOUNDLESS_FLAG = 0x1
 
         vm.prank(admin);
         br.transition(abi.encode(journal), receipt.seal);
 
         // Verify boundless-only confirmation (level 1)
-        (bytes32 storedRoot, bool valid) = br.blockRoot(epoch, 1);
+        (bytes32 storedRoot, bool valid) = br.blockRoot(slot, 1);
         assertEq(storedRoot, root_);
         assertTrue(valid);
 
         // Step 2: Wormhole attestation for same epoch and root
-        bytes memory encodedVM = abi.encodePacked("wormhole_second", epoch, root_);
-        wormhole.setMockVM(encodedVM, epoch, root_, beaconEmitter, emitterChainId);
+        bytes memory encodedVM = abi.encodePacked("wormhole_second", slot, root_);
+        wormhole.setMockVM(encodedVM, slot, root_, beaconEmitter, emitterChainId);
 
         vm.expectEmit(true, true, true, true);
-        emit BoundlessReceiver.Confirmed(epoch, root_, 3); // BOUNDLESS_FLAG | WORMHOLE_FLAG = 0x3
+        emit BoundlessReceiver.Confirmed(journal.finalizedSlot, root_, 3); // BOUNDLESS_FLAG | WORMHOLE_FLAG = 0x3
 
         br.receiveWormholeMessage(encodedVM);
 
         // Verify combined confirmation level (3 = 0x1 | 0x2)
-        (bytes32 finalRoot, bool finalValid) = br.blockRoot(epoch, 3);
+        (bytes32 finalRoot, bool finalValid) = br.blockRoot(slot, 3);
         assertEq(finalRoot, root_);
         assertTrue(finalValid);
 
         // Verify a lower confirmation level is enough as well
-        (bytes32 finalRoot2, bool finalValid2) = br.blockRoot(epoch, 2);
+        (bytes32 finalRoot2, bool finalValid2) = br.blockRoot(slot, 2);
         assertEq(finalRoot2, root_);
         assertTrue(finalValid2);
     }
