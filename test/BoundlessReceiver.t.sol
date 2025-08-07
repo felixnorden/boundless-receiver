@@ -6,11 +6,13 @@ import { RiscZeroMockVerifier } from "@risc0/contracts/test/RiscZeroMockVerifier
 import { ConsensusState, Checkpoint } from "../src/tseth.sol";
 import { BoundlessReceiver } from "../src/BoundlessReceiver.sol";
 import { WormholeMock } from "./mocks/WormholeMock.sol";
+import { Beacon } from "../src/lib/Beacon.sol";
 
 import { Test } from "forge-std/Test.sol";
 import { console2 } from "forge-std/console2.sol";
 
 contract RiscZeroTransceiverTest is Test {
+    uint64 constant SLOTS_PER_EPOCH = 32;
     bytes4 constant MOCK_SELECTOR = bytes4(0);
     BoundlessReceiver br;
     RiscZeroMockVerifier verifier;
@@ -94,7 +96,8 @@ contract RiscZeroTransceiverTest is Test {
             postState: ConsensusState({
                 currentJustifiedCheckpoint: Checkpoint({ epoch: 1, root: bytes32(uint256(1)) }),
                 finalizedCheckpoint: Checkpoint({ epoch: 1, root: bytes32(uint256(1)) })
-            })
+            }),
+            finalizedSlot: SLOTS_PER_EPOCH
         });
 
         bytes memory journalData = abi.encode(journal);
@@ -111,11 +114,11 @@ contract RiscZeroTransceiverTest is Test {
         br.manualTransition(journalData);
 
         // TODO: Check if there's a cold-start with initialized value for internal root lookup
-        (bytes32 root, bool valid) = br.blockRoot(journal.postState.finalizedCheckpoint.epoch, 0x1);
+        (bytes32 root, bool valid) = br.blockRoot(journal.finalizedSlot, 0x1);
         assertEq(root, journal.postState.finalizedCheckpoint.root);
         assertTrue(valid, "Block root not valid when it should be by Boundless");
 
-        (, bool validHigherLevel) = br.blockRoot(journal.postState.finalizedCheckpoint.epoch, 0x2);
+        (, bool validHigherLevel) = br.blockRoot(journal.finalizedSlot, 0x2);
 
         assertFalse(validHigherLevel, "Block root should not be valid by wormhole");
     }
@@ -126,7 +129,8 @@ contract RiscZeroTransceiverTest is Test {
             postState: ConsensusState({
                 currentJustifiedCheckpoint: Checkpoint({ epoch: 1, root: bytes32(uint256(1)) }),
                 finalizedCheckpoint: Checkpoint({ epoch: 1, root: bytes32(uint256(1)) })
-            })
+            }),
+            finalizedSlot: SLOTS_PER_EPOCH
         });
 
         bytes memory journalData = abi.encode(journal);
@@ -145,7 +149,8 @@ contract RiscZeroTransceiverTest is Test {
             postState: ConsensusState({
                 currentJustifiedCheckpoint: Checkpoint({ epoch: 2, root: bytes32(uint256(2)) }),
                 finalizedCheckpoint: Checkpoint({ epoch: 2, root: bytes32(uint256(2)) })
-            })
+            }),
+            finalizedSlot: 2 * SLOTS_PER_EPOCH
         });
 
         bytes memory journalData = abi.encode(journal);
@@ -160,7 +165,7 @@ contract RiscZeroTransceiverTest is Test {
 
         vm.prank(admin);
         br.manualTransition(journalData);
-        (bytes32 root, bool valid) = br.blockRoot(journal.postState.finalizedCheckpoint.epoch, 0x1);
+        (bytes32 root, bool valid) = br.blockRoot(journal.finalizedSlot, 0x1);
         assertEq(root, journal.postState.finalizedCheckpoint.root);
         assertTrue(valid);
     }
@@ -177,7 +182,8 @@ contract RiscZeroTransceiverTest is Test {
                     epoch: root.finalizedCheckpoint.epoch + permissibleTimespan + 1,
                     root: bytes32(uint256(1))
                 })
-            })
+            }),
+            finalizedSlot: (root.finalizedCheckpoint.epoch + permissibleTimespan + 1) * SLOTS_PER_EPOCH
         });
 
         bytes memory journalData = abi.encode(journal);
@@ -192,7 +198,7 @@ contract RiscZeroTransceiverTest is Test {
 
         vm.prank(admin);
         br.manualTransition(journalData);
-        (bytes32 root, bool valid) = br.blockRoot(journal.postState.finalizedCheckpoint.epoch, 0x1);
+        (bytes32 root, bool valid) = br.blockRoot(journal.finalizedSlot, 0x1);
         assertEq(root, journal.postState.finalizedCheckpoint.root);
         assertTrue(valid);
     }
@@ -200,11 +206,16 @@ contract RiscZeroTransceiverTest is Test {
     function test_TransitionSucceeds() public {
         RiscZeroReceipt memory receipt = verifier.mockProve(imageID, sha256(abi.encode(journal)));
 
+        vm.warp(
+            Beacon.epochTimestamp(
+                Beacon.ETHEREUM_GENESIS_BEACON_BLOCK_TIMESTAMP, journal.postState.finalizedCheckpoint.epoch
+            ) + permissibleTimespan
+        );
         vm.startPrank(admin);
         br.transition(abi.encode(journal), receipt.seal);
         vm.stopPrank();
 
-        (bytes32 root, bool valid) = br.blockRoot(journal.postState.finalizedCheckpoint.epoch, 0x1);
+        (bytes32 root, bool valid) = br.blockRoot(journal.finalizedSlot, 0x1);
         assertEq(root, journal.postState.finalizedCheckpoint.root);
         assertTrue(valid);
     }
@@ -215,7 +226,8 @@ contract RiscZeroTransceiverTest is Test {
                 currentJustifiedCheckpoint: Checkpoint({ epoch: 1, root: bytes32(uint256(1)) }),
                 finalizedCheckpoint: Checkpoint({ epoch: 1, root: bytes32(uint256(1)) })
             }),
-            postState: journal.postState
+            postState: journal.postState,
+            finalizedSlot: SLOTS_PER_EPOCH
         });
         RiscZeroReceipt memory receipt = verifier.mockProve(imageID, sha256(abi.encode(journal_)));
 
@@ -237,9 +249,16 @@ contract RiscZeroTransceiverTest is Test {
                     epoch: root.finalizedCheckpoint.epoch + permissibleTimespan + 1,
                     root: bytes32(uint256(1))
                 })
-            })
+            }),
+            finalizedSlot: SLOTS_PER_EPOCH
         });
         RiscZeroReceipt memory receipt = verifier.mockProve(imageID, sha256(abi.encode(journal_)));
+
+        vm.warp(
+            Beacon.epochTimestamp(
+                Beacon.ETHEREUM_GENESIS_BEACON_BLOCK_TIMESTAMP, journal_.postState.finalizedCheckpoint.epoch
+            ) + permissibleTimespan + 1
+        );
 
         vm.expectRevert(BoundlessReceiver.PermissibleTimespanLapsed.selector);
         vm.startPrank(admin);
@@ -299,19 +318,21 @@ contract RiscZeroTransceiverTest is Test {
 
     function test_Integration_WormholeThenBoundless_SameEpochRoot() public {
         uint64 epoch = root.finalizedCheckpoint.epoch + 1;
+        uint64 slot = journal.finalizedSlot;
         bytes32 root_ = bytes32(uint256(1));
 
+        console2.log(beaconEmitter);
         // Step 1: Wormhole attestation first
-        bytes memory encodedVM = abi.encodePacked("wormhole_first", epoch, root_);
-        wormhole.setMockVM(encodedVM, epoch, root_, beaconEmitter, emitterChainId);
+        bytes memory encodedVM = abi.encodePacked("wormhole_first", slot, root_);
+        wormhole.setMockVM(encodedVM, journal.finalizedSlot, root_, beaconEmitter, emitterChainId);
 
         vm.expectEmit(true, true, true, true);
-        emit BoundlessReceiver.Confirmed(epoch, root_, 2); // WORMHOLE_FLAG = 0x2
+        emit BoundlessReceiver.Confirmed(slot, root_, 2); // WORMHOLE_FLAG = 0x2
 
         br.receiveWormholeMessage(encodedVM);
 
         // Verify wormhole-only confirmation (level 2)
-        (bytes32 storedRoot, bool valid) = br.blockRoot(epoch, 2);
+        (bytes32 storedRoot, bool valid) = br.blockRoot(slot, 2);
         assertEq(storedRoot, root_);
         assertTrue(valid);
 
@@ -321,10 +342,17 @@ contract RiscZeroTransceiverTest is Test {
             postState: ConsensusState({
                 currentJustifiedCheckpoint: Checkpoint({ epoch: epoch, root: root_ }),
                 finalizedCheckpoint: Checkpoint({ epoch: epoch, root: root_ })
-            })
+            }),
+            finalizedSlot: slot
         });
 
         RiscZeroReceipt memory receipt = verifier.mockProve(imageID, sha256(abi.encode(journal)));
+
+        vm.warp(
+            Beacon.epochTimestamp(
+                Beacon.ETHEREUM_GENESIS_BEACON_BLOCK_TIMESTAMP, journal.postState.finalizedCheckpoint.epoch
+            ) + permissibleTimespan
+        );
 
         vm.expectEmit(true, true, true, true);
         emit BoundlessReceiver.Transitioned(
@@ -335,19 +363,20 @@ contract RiscZeroTransceiverTest is Test {
         );
 
         vm.expectEmit(true, true, true, true);
-        emit BoundlessReceiver.Confirmed(epoch, root_, 3); // BOUNDLESS_FLAG | WORMHOLE_FLAG = 0x3
+        emit BoundlessReceiver.Confirmed(slot, root_, 3); // BOUNDLESS_FLAG | WORMHOLE_FLAG = 0x3
 
         vm.prank(admin);
         br.transition(abi.encode(journal), receipt.seal);
 
         // Verify combined confirmation level (3 = 0x1 | 0x2)
-        (bytes32 finalRoot, bool finalValid) = br.blockRoot(epoch, 3);
+        (bytes32 finalRoot, bool finalValid) = br.blockRoot(slot, 3);
         assertEq(finalRoot, root_);
         assertTrue(finalValid);
     }
 
     function test_Integration_BoundlessThenWormhole_SameEpochRoot() public {
-        uint64 epoch = root.finalizedCheckpoint.epoch + 1;
+        uint64 slot = journal.finalizedSlot;
+        uint64 epoch = journal.postState.finalizedCheckpoint.epoch;
         bytes32 root_ = bytes32(uint256(2));
 
         // Step 1: Boundless transition first
@@ -356,10 +385,17 @@ contract RiscZeroTransceiverTest is Test {
             postState: ConsensusState({
                 currentJustifiedCheckpoint: Checkpoint({ epoch: epoch, root: root_ }),
                 finalizedCheckpoint: Checkpoint({ epoch: epoch, root: root_ })
-            })
+            }),
+            finalizedSlot: slot
         });
 
         RiscZeroReceipt memory receipt = verifier.mockProve(imageID, sha256(abi.encode(journal)));
+
+        vm.warp(
+            Beacon.epochTimestamp(
+                Beacon.ETHEREUM_GENESIS_BEACON_BLOCK_TIMESTAMP, journal.postState.finalizedCheckpoint.epoch
+            ) + permissibleTimespan
+        );
 
         vm.expectEmit(true, true, true, true);
         emit BoundlessReceiver.Transitioned(
@@ -370,44 +406,43 @@ contract RiscZeroTransceiverTest is Test {
         );
 
         vm.expectEmit(true, true, true, true);
-        emit BoundlessReceiver.Confirmed(epoch, root_, 1); // BOUNDLESS_FLAG = 0x1
-
+        emit BoundlessReceiver.Confirmed(slot, root_, 1); // BOUNDLESS_FLAG = 0x1
         vm.prank(admin);
         br.transition(abi.encode(journal), receipt.seal);
 
         // Verify boundless-only confirmation (level 1)
-        (bytes32 storedRoot, bool valid) = br.blockRoot(epoch, 1);
+        (bytes32 storedRoot, bool valid) = br.blockRoot(slot, 1);
         assertEq(storedRoot, root_);
         assertTrue(valid);
 
         // Step 2: Wormhole attestation for same epoch and root
-        bytes memory encodedVM = abi.encodePacked("wormhole_second", epoch, root_);
-        wormhole.setMockVM(encodedVM, epoch, root_, beaconEmitter, emitterChainId);
+        bytes memory encodedVM = abi.encodePacked("wormhole_second", slot, root_);
+        wormhole.setMockVM(encodedVM, slot, root_, beaconEmitter, emitterChainId);
 
         vm.expectEmit(true, true, true, true);
-        emit BoundlessReceiver.Confirmed(epoch, root_, 3); // BOUNDLESS_FLAG | WORMHOLE_FLAG = 0x3
+        emit BoundlessReceiver.Confirmed(slot, root_, 3); // BOUNDLESS_FLAG | WORMHOLE_FLAG = 0x3
 
         br.receiveWormholeMessage(encodedVM);
 
         // Verify combined confirmation level (3 = 0x1 | 0x2)
-        (bytes32 finalRoot, bool finalValid) = br.blockRoot(epoch, 3);
+        (bytes32 finalRoot, bool finalValid) = br.blockRoot(slot, 3);
         assertEq(finalRoot, root_);
         assertTrue(finalValid);
 
         // Verify a lower confirmation level is enough as well
-        (bytes32 finalRoot2, bool finalValid2) = br.blockRoot(epoch, 2);
+        (bytes32 finalRoot2, bool finalValid2) = br.blockRoot(slot, 2);
         assertEq(finalRoot2, root_);
         assertTrue(finalValid2);
     }
 
     function test_Integration_DifferentEpochs_SameRoot() public {
         bytes32 sameRoot = bytes32(uint256(0x1234));
-        uint64 wormholeEpoch = root.finalizedCheckpoint.epoch + 1;
-        uint64 boundlessEpoch = root.finalizedCheckpoint.epoch + 2;
+        uint64 wormholeSlot = (root.finalizedCheckpoint.epoch + 1) * SLOTS_PER_EPOCH;
+        uint64 boundlessSlot = (root.finalizedCheckpoint.epoch + 2) * SLOTS_PER_EPOCH;
 
         // Step 1: Wormhole attestation for epoch root.epoch + 1
-        bytes memory encodedVM = abi.encodePacked("wormhole_epoch3", wormholeEpoch, sameRoot);
-        wormhole.setMockVM(encodedVM, wormholeEpoch, sameRoot, beaconEmitter, emitterChainId);
+        bytes memory encodedVM = abi.encodePacked("wormhole_epoch3", wormholeSlot, sameRoot);
+        wormhole.setMockVM(encodedVM, wormholeSlot, sameRoot, beaconEmitter, emitterChainId);
 
         br.receiveWormholeMessage(encodedVM);
 
@@ -415,31 +450,38 @@ contract RiscZeroTransceiverTest is Test {
         BoundlessReceiver.Journal memory journal = BoundlessReceiver.Journal({
             preState: root,
             postState: ConsensusState({
-                currentJustifiedCheckpoint: Checkpoint({ epoch: boundlessEpoch, root: sameRoot }),
-                finalizedCheckpoint: Checkpoint({ epoch: boundlessEpoch, root: sameRoot })
-            })
+                currentJustifiedCheckpoint: Checkpoint({ epoch: boundlessSlot, root: sameRoot }),
+                finalizedCheckpoint: Checkpoint({ epoch: boundlessSlot, root: sameRoot })
+            }),
+            finalizedSlot: boundlessSlot
         });
 
         RiscZeroReceipt memory receipt = verifier.mockProve(imageID, sha256(abi.encode(journal)));
+
+        vm.warp(
+            Beacon.epochTimestamp(
+                Beacon.ETHEREUM_GENESIS_BEACON_BLOCK_TIMESTAMP, journal.postState.finalizedCheckpoint.epoch
+            ) + permissibleTimespan
+        );
 
         vm.prank(admin);
         br.transition(abi.encode(journal), receipt.seal);
 
         // Verify wormhole-only confirms epoch root.epoch + 1 with level 2
-        (bytes32 wormholeRoot, bool wormholeValid) = br.blockRoot(wormholeEpoch, 2);
+        (bytes32 wormholeRoot, bool wormholeValid) = br.blockRoot(wormholeSlot, 2);
         assertEq(wormholeRoot, sameRoot);
         assertTrue(wormholeValid);
 
         // Verify boundless-only confirms epoch root.epoch + 2 with level 1
-        (bytes32 boundlessRoot, bool boundlessValid) = br.blockRoot(boundlessEpoch, 1);
+        (bytes32 boundlessRoot, bool boundlessValid) = br.blockRoot(boundlessSlot, 1);
         assertEq(boundlessRoot, sameRoot);
         assertTrue(boundlessValid);
 
         // Verify no cross-contamination
-        (, bool invalidValid) = br.blockRoot(wormholeEpoch, 1);
+        (, bool invalidValid) = br.blockRoot(wormholeSlot, 1);
         assertFalse(invalidValid);
 
-        (, bool invalidValid2) = br.blockRoot(boundlessEpoch, 2);
+        (, bool invalidValid2) = br.blockRoot(boundlessSlot, 2);
         assertFalse(invalidValid2);
     }
 }

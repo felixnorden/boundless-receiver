@@ -6,6 +6,7 @@ import { IRiscZeroVerifier } from "@risc0/contracts/IRiscZeroVerifier.sol";
 import { ConsensusState, Checkpoint } from "./tseth.sol";
 import { IWormhole } from "wormhole-sdk/interfaces/IWormhole.sol";
 import { toWormholeFormat } from "wormhole-sdk/Utils.sol";
+import { Beacon } from "./lib/Beacon.sol";
 
 contract BoundlessReceiver is AccessControl {
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -22,6 +23,7 @@ contract BoundlessReceiver is AccessControl {
     struct Journal {
         ConsensusState preState;
         ConsensusState postState;
+        uint64 finalizedSlot;
     }
 
     ConsensusState private currentState;
@@ -40,13 +42,13 @@ contract BoundlessReceiver is AccessControl {
     /// @notice The chain ID where the approved BeaconEmitter is deployed.
     uint16 public immutable EMITTER_CHAIN_ID;
 
-    mapping(uint64 epoch => bytes32 blockRoot) private roots;
+    mapping(uint64 slot => bytes32 blockRoot) private roots;
     mapping(bytes32 checkpointHash => CheckpointAttestation attestation) private attestations;
 
     event Transitioned(
         uint64 indexed preEpoch, uint64 indexed postEpoch, ConsensusState preState, ConsensusState postState
     );
-    event Confirmed(uint64 indexed epoch, bytes32 indexed root, uint16 indexed confirmationLevel);
+    event Confirmed(uint64 indexed slot, bytes32 indexed root, uint16 indexed confirmationLevel);
 
     error InvalidArgument();
     error InvalidPreState();
@@ -104,9 +106,9 @@ contract BoundlessReceiver is AccessControl {
             revert UnauthorizedEmitterAddress();
         }
 
-        (uint64 epoch, bytes32 root) = abi.decode(vm.payload, (uint64, bytes32));
+        (uint64 slot, bytes32 root) = abi.decode(vm.payload, (uint64, bytes32));
 
-        _confirm(epoch, root, WORMHOLE_FLAG);
+        _confirm(slot, root, WORMHOLE_FLAG);
     }
 
     function manualTransition(bytes calldata journalData) external onlyRole(ADMIN_ROLE) {
@@ -115,20 +117,20 @@ contract BoundlessReceiver is AccessControl {
     }
 
     /**
-     * @notice the root associated with the provided `epoch`. If the confirmation level isn't met or the root is not
+     * @notice the root associated with the provided `slot`. If the confirmation level isn't met or the root is not
      * set, `valid` will be false
      *
      * TODO: Add in link ref to confirmation levels
      *
-     * @param epoch the epoch to look up
+     * @param slot the beacon chain slot to look up
      * @param confirmationLevel the level of confirmations required for `valid` to be `true`
      */
-    function blockRoot(uint64 epoch, uint16 confirmationLevel) external view returns (bytes32 root, bool valid) {
-        root = roots[epoch];
+    function blockRoot(uint64 slot, uint16 confirmationLevel) external view returns (bytes32 root, bool valid) {
+        root = roots[slot];
         if (root == UNDEFINED_ROOT) {
             valid = false;
         }
-        CheckpointAttestation storage attestation = attestations[_checkpointHash(epoch, root)];
+        CheckpointAttestation storage attestation = attestations[_checkpointHash(slot, root)];
         valid = _sufficientConfirmations(attestation.confirmations, confirmationLevel);
     }
 
@@ -154,7 +156,7 @@ contract BoundlessReceiver is AccessControl {
         );
 
         Checkpoint memory finalizedCheckpoint = journal.postState.finalizedCheckpoint;
-        _confirm(finalizedCheckpoint.epoch, finalizedCheckpoint.root, BOUNDLESS_FLAG);
+        _confirm(journal.finalizedSlot, finalizedCheckpoint.root, BOUNDLESS_FLAG);
     }
 
     function _compareConsensusState(ConsensusState memory a, ConsensusState memory b) internal pure returns (bool) {
@@ -174,26 +176,24 @@ contract BoundlessReceiver is AccessControl {
         view
         returns (bool)
     {
-        uint256 transitionTimespan = post.currentJustifiedCheckpoint.epoch - pre.currentJustifiedCheckpoint.epoch;
+        uint256 transitionTimespan = block.timestamp
+            - Beacon.epochTimestamp(Beacon.ETHEREUM_GENESIS_BEACON_BLOCK_TIMESTAMP, post.finalizedCheckpoint.epoch);
         return transitionTimespan <= uint256(permissibleTimespan);
     }
 
-    function _checkpointHash(Checkpoint memory checkpoint) internal pure returns (bytes32 hash) {
-        hash = _checkpointHash(checkpoint.epoch, checkpoint.root);
+    // @notice Generates a unique hash for block that was included in the chain at the given slot
+    function _checkpointHash(uint64 slot, bytes32 root) internal pure returns (bytes32 hash) {
+        hash = keccak256(abi.encodePacked(slot, root));
     }
 
-    function _checkpointHash(uint64 epoch, bytes32 root) internal pure returns (bytes32 hash) {
-        hash = keccak256(abi.encodePacked(epoch, root));
-    }
-
-    function _confirm(uint64 epoch, bytes32 root, uint16 flag) internal {
-        CheckpointAttestation storage attestation = attestations[_checkpointHash(epoch, root)];
+    function _confirm(uint64 slot, bytes32 root, uint16 flag) internal {
+        CheckpointAttestation storage attestation = attestations[_checkpointHash(slot, root)];
         attestation.confirmations = _confirm(attestation.confirmations, flag);
         // TODO: Verify if blockroot collision is possible
-        if (roots[epoch] == UNDEFINED_ROOT) {
-            roots[epoch] = root;
+        if (roots[slot] == UNDEFINED_ROOT) {
+            roots[slot] = root;
         }
-        emit Confirmed(epoch, root, attestation.confirmations);
+        emit Confirmed(slot, root, attestation.confirmations);
     }
 
     function _confirm(uint16 confirmations, uint16 flag) internal pure returns (uint16) {
