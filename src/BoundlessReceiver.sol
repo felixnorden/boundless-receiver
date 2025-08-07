@@ -6,6 +6,7 @@ import { IRiscZeroVerifier } from "@risc0/contracts/IRiscZeroVerifier.sol";
 import { ConsensusState, Checkpoint } from "./tseth.sol";
 import { IWormhole } from "wormhole-sdk/interfaces/IWormhole.sol";
 import { toWormholeFormat } from "wormhole-sdk/Utils.sol";
+import { Beacon } from "./lib/Beacon.sol";
 
 contract BoundlessReceiver is AccessControl {
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -175,7 +176,8 @@ contract BoundlessReceiver is AccessControl {
         view
         returns (bool)
     {
-        uint256 transitionTimespan = post.currentJustifiedCheckpoint.epoch - pre.currentJustifiedCheckpoint.epoch;
+        uint256 transitionTimespan = block.timestamp
+            - Beacon.epochTimestamp(Beacon.ETHEREUM_GENESIS_BEACON_BLOCK_TIMESTAMP, post.finalizedCheckpoint.epoch);
         return transitionTimespan <= uint256(permissibleTimespan);
     }
 

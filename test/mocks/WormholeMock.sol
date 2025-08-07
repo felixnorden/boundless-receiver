@@ -23,11 +23,11 @@ contract WormholeMock is IWormhole {
         uint64 epoch,
         bytes32 root,
         address emitter,
-        uint16 chainId
+        uint16 _chainId
     )
         external
     {
-        _encodedVMs[encodedVM] = MockVM({ epoch: epoch, root: root, emitter: emitter, emitterChainId: chainId });
+        _encodedVMs[encodedVM] = MockVM({ epoch: epoch, root: root, emitter: emitter, emitterChainId: _chainId });
     }
 
     function parseAndVerifyVM(bytes calldata encodedVM)
@@ -49,7 +49,21 @@ contract WormholeMock is IWormhole {
         reason = "";
     }
 
-    // Stub implementations for unused functions
+    struct PublishedMessage {
+        uint256 value;
+        bytes payload;
+        uint32 nonce;
+        uint8 consistencyLevel;
+        address sender;
+    }
+
+    PublishedMessage[] private _publishedMessages;
+    uint256 public override messageFee = 0.0001 ether;
+
+    function publishedMessagesLength() public view returns (uint256) {
+        return _publishedMessages.length;
+    }
+
     function publishMessage(
         uint32 nonce,
         bytes calldata payload,
@@ -58,7 +72,21 @@ contract WormholeMock is IWormhole {
         external
         payable
         returns (uint64 sequence)
-    { }
+    {
+        require(msg.value >= messageFee, "Insufficient fee");
+
+        _publishedMessages.push(
+            PublishedMessage({
+                nonce: nonce,
+                payload: payload,
+                consistencyLevel: consistencyLevel,
+                sender: msg.sender,
+                value: msg.value
+            })
+        );
+
+        return uint64(_publishedMessages.length - 1);
+    }
 
     function parseVM(bytes calldata encodedVM) external pure returns (VM memory vm) { }
 
@@ -107,7 +135,9 @@ contract WormholeMock is IWormhole {
 
     function governanceContract() external view override returns (bytes32) { }
 
-    function messageFee() external view override returns (uint256) { }
+    function publishedMessages(uint256 index) external view returns (PublishedMessage memory msg) {
+        msg = _publishedMessages[index];
+    }
 
     function evmChainId() external view override returns (uint256) { }
 
