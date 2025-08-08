@@ -4,8 +4,8 @@ pragma solidity ^0.8.30;
 import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
 import { IRiscZeroVerifier } from "@risc0/contracts/IRiscZeroVerifier.sol";
 import { ConsensusState, Checkpoint } from "./tseth.sol";
-import { IWormhole } from "wormhole-sdk/interfaces/IWormhole.sol";
-import { toWormholeFormat } from "wormhole-sdk/Utils.sol";
+import { IWormhole } from "wormhole-solidity-sdk/interfaces/IWormhole.sol";
+import { toWormholeFormat } from "wormhole-solidity-sdk/Utils.sol";
 import { Beacon } from "./lib/Beacon.sol";
 
 contract BoundlessReceiver is AccessControl {
