@@ -65,10 +65,10 @@ contract BoundlessReceiver is AccessControl {
         address beaconEmitter,
         uint16 emitterChainId,
         address admin,
-        address roleAdmin
+        address superAdmin
     ) {
         _grantRole(ADMIN_ROLE, admin);
-        _grantRole(DEFAULT_ADMIN_ROLE, roleAdmin);
+        _grantRole(DEFAULT_ADMIN_ROLE, superAdmin);
 
         currentState = startingState;
         permissibleTimespan = permissibleTimespan_;
